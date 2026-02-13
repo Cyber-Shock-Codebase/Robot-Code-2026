@@ -88,7 +88,7 @@ public class ShooterSubsystem extends SubsystemBase {
   public Command setVelocity(AngularVelocity speed) {return shooter.setSpeed(speed);}
 
 
-  public Command setset() {return shooter.setSpeed(RPM.of(2000));}
+  public Command settest() {return shooter.setSpeed(RPM.of(2000));}
 
   /**
    * Set the dutycycle of the shooter.
