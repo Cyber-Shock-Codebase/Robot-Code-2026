@@ -8,15 +8,6 @@
 
 package frc.robot.subsystems;
 
-import static edu.wpi.first.units.Units.Amps;
-import static edu.wpi.first.units.Units.Degrees;
-import static edu.wpi.first.units.Units.DegreesPerSecond;
-import static edu.wpi.first.units.Units.DegreesPerSecondPerSecond;
-import static edu.wpi.first.units.Units.Feet;
-import static edu.wpi.first.units.Units.Pounds;
-import static edu.wpi.first.units.Units.Second;
-import static edu.wpi.first.units.Units.Seconds;
-import static edu.wpi.first.units.Units.Volts;
 import static edu.wpi.first.units.Units.*;
 
 import com.revrobotics.spark.SparkLowLevel.MotorType;
@@ -54,14 +45,14 @@ public class ShooterSubsystem extends SubsystemBase {
   // Gearing from the motor rotor to final shaft.
   // In this example GearBox.fromReductionStages(3,4) is the same as GearBox.fromStages("3:1","4:1") which corresponds to the gearbox attached to your motor.
   // You could also use .withGearing(12) which does the same thing.
-  .withGearing(new MechanismGearing(GearBox.fromReductionStages(3,4)))
+  .withGearing(new MechanismGearing(GearBox.fromStages("1:1.8667")))
   // Motor properties to prevent over currenting.
   .withMotorInverted(false)
   .withIdleMode(MotorMode.COAST)
   .withStatorCurrentLimit(Amps.of(40));
 
   // Vendor motor controller object
-  private SparkMax spark = new SparkMax(51, MotorType.kBrushless);
+  private SparkMax spark = new SparkMax(1, MotorType.kBrushless);
 
   // Create our SmartMotorController from our Spark and config with the NEO.
   private SmartMotorController sparkSmartMotorController = new SparkWrapper(spark, DCMotor.getNEO(1), smcConfig);
@@ -95,6 +86,8 @@ public class ShooterSubsystem extends SubsystemBase {
    * @return {@link edu.wpi.first.wpilibj2.command.RunCommand}
    */
   public Command setVelocity(AngularVelocity speed) {return shooter.setSpeed(speed);}
+
+  public Command setset() {return shooter.setSpeed(RPM.of(2000));}
 
   /**
    * Set the dutycycle of the shooter.

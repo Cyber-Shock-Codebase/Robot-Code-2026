@@ -5,53 +5,111 @@ import static edu.wpi.first.units.Units.Degrees;
 import static edu.wpi.first.units.Units.Inches;
 import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.RPM;
+import static edu.wpi.first.units.Units.Radian;
+import static edu.wpi.first.units.Units.RadiansPerSecond;
+import static edu.wpi.first.units.Units.RadiansPerSecondPerSecond;
+import static edu.wpi.first.units.Units.RotationsPerSecond;
+import static edu.wpi.first.units.Units.RotationsPerSecondPerSecond;
 
-import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.controller.ProfiledPIDController;
+import edu.wpi.first.math.controller.SimpleMotorFeedforward;
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.math.util.Units;
 import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.AngularAcceleration;
 import edu.wpi.first.units.measure.AngularVelocity;
 import edu.wpi.first.units.measure.Distance;
 import edu.wpi.first.wpilibj2.command.Command;
+import frc.robot.subsystems.swervedrive.SwerveSubsystem;
+import frc.robot.Constants.OperatorConstants;
 import frc.robot.subsystems.ShooterSubsystem;
-import frc.robot.subsystems.swervedrive.*;
-import swervelib.SwerveDrive;
-import yams.mechanisms.swerve.utility.SwerveInputStream;
-
+import edu.wpi.first.math.trajectory.TrapezoidProfile.State;
+import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.function.Supplier;
-import java.util.function.ToDoubleBiFunction;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import swervelib.SwerveInputStream;
+import edu.wpi.first.math.trajectory.Trajectory;
+import edu.wpi.first.math.trajectory.TrajectoryConfig;
+import edu.wpi.first.math.trajectory.TrajectoryGenerator;
+import edu.wpi.first.math.trajectory.TrapezoidProfile.Constraints;
+
+
+
 
 public class ShootOnTheMoveCommand extends Command {
   private final SwerveSubsystem drivetrain;
- private final ShooterSubsystem Shooter;
-  private Supplier<Translation3d> aimPointSupplier; // The point to aim at
+  private final ShooterSubsystem shooter;
   private final SwerveInputStream inputStream;
+  private Translation3d aimPoint; // The point to aim at
   private AngularVelocity latestShootSpeed;
-  private Angle latestHoodAngle;
-  private Angle latestTurretAngle;
+  private Angle HoodAngle;
+  private Angle latestWindage;
+  private final Angle                      setpointTolerance   = Degrees.of(0);
+  private final AngularVelocity            maxProfiledVelocity = RotationsPerSecond.of(60);
+  private final AngularAcceleration    maxProfiledAcceleration = RotationsPerSecondPerSecond.of(60);
+
+  private final ProfiledPIDController  pidController           = new ProfiledPIDController(1.5,
+                                                                                           0,
+                                                                                           0,
+                                                                                           new Constraints(
+                                                                                           maxProfiledVelocity.in(RadiansPerSecond),
+                                                                                           maxProfiledAcceleration.in(RadiansPerSecondPerSecond)));
+  private final SimpleMotorFeedforward feedforward             = new SimpleMotorFeedforward(0, 0, 0);
 
   public ShootOnTheMoveCommand(
-      SwerveInputStream inputStream,
       SwerveSubsystem drivetrain,
+      SwerveInputStream inputStream,
       ShooterSubsystem shooter,
-      Supplier<Translation3d> aimPointSupplier) {
-    this.inputStream = inputStream;
+      Translation3d aimPoint) {
     this.drivetrain = drivetrain;
-    this.Shooter = shooter;
-    this.aimPointSupplier = aimPointSupplier;
+    this.inputStream = inputStream;
+    this.shooter = shooter;
+    this.aimPoint = aimPoint;
+    pidController.setTolerance(setpointTolerance.in(Radian));
+    pidController.enableContinuousInput(0, 2*Math.PI);
+
+    
+
+    // We use the drivetrain to determine linear velocity, but don't require it for
+    // control. We
+    // will be using the superstructure to control the shooting mechanism so it's a
+    // requirement.
+    // addRequirements(superstructure);
+
+    // TODO: figure out if the above is actually required. Right now, when you start
+    // some other command, the auto aim can't start back up again
   }
 
   @Override
   public void initialize() {
     super.initialize();
 
-    latestHoodAngle = Degrees.of(28);
-    latestTurretAngle = Degrees.of(0);
-    latestShootSpeed = Shooter.getVelocity();
+    HoodAngle = Degrees.of(28);
+    latestWindage = Degrees.of(drivetrain.getHeading().getDegrees());
+    latestShootSpeed = shooter.getVelocity();
+
+    // TODO: when this current command ends, we should probably cancel the dynamic
+    // aim command
+    // superstructure
+    //     .aimDynamicCommand(
+    //         () -> {
+    //           return this.latestShootSpeed;
+    //         },
+    //         () -> {
+    //           return this.latestTurretAngle;
+    //         },
+    //         () -> {
+    //           return this.latestHoodAngle;
+    //         })
+    //     .schedule();
   }
 
   @Override
@@ -61,16 +119,17 @@ public class ShootOnTheMoveCommand extends Command {
 
   @Override
   public void execute() {
-// Calculate trajectory to aimPoint
-var target = aimPointSupplier.get();
+    // Calculate trajectory to aimPoint
+    var target = aimPoint;
 
-var shooterLocation =
-    new Translation3d(drivetrain.getPose().getX(), drivetrain.getPose().getY(), 0)
-        .plus(new Translation3d(0, 5.718, 16.393));
-// Ignore this parameter for now, the range tables will account for it :/
-// var deltaH = target.getMeasureZ().minus(shooterLocation.getMeasureZ());
-var shooterOnGround = new Translation2d(shooterLocation.getX(), shooterLocation.getY());
-var targetOnGround = new Translation2d(target.getX(), target.getY());
+    var shooterLocation =
+        new Translation3d(drivetrain.getPose().getX(), drivetrain.getPose().getY(), 0)
+            .plus( new Translation3d(-5.72,0,16.4));
+
+    // Ignore this parameter for now, the range tables will account for it :/
+    // var deltaH = target.getMeasureZ().minus(shooterLocation.getMeasureZ());
+    var shooterOnGround = new Translation2d(shooterLocation.getX(), shooterLocation.getY());
+    var targetOnGround = new Translation2d(target.getX(), target.getY());
 
     var distanceToTarget = Meters.of(shooterOnGround.getDistance(targetOnGround));
 
@@ -97,34 +156,63 @@ var targetOnGround = new Translation2d(target.getX(), target.getY());
     var vectorToTarget = drivetrain.getPose().getTranslation().minus(correctedTarget);
 
     var correctedDistance = Meters.of(vectorToTarget.getNorm());
-    var calculatedHeading =
-        vectorToTarget.getAngle().rotateBy(drivetrain.getHeading()).getMeasure();
+    var calculatedHeading = vectorToTarget.getAngle().getMeasure();
+        // .rotateBy(drivetrain.getHeading()).getMeasure();
     // .minus(Degrees.of(180)); // .unaryminus
 
     // Logger.recordOutput("ShootOnTheMove/RobotHeading", drivetrain.getHeading());
     // Logger.recordOutput("ShootOnTheMove/CalculatedHeading", calculatedHeading);
     // Logger.recordOutput("ShootOnTheMove/distanceToTarget", distanceToTarget);
+    
+    // drivetrain.getSwerveDrive().field.getObject("targetPose").setTrajectory(
+    //         TrajectoryGenerator.generateTrajectory(
+    //         new Pose2d(drivetrain.getPose().getX(), drivetrain.getPose().getY(), Rotation2d.fromRadians(calculatedHeading.in(Radian))),
+    //         List.of(),
+    //         new Pose2d(correctedTarget.getX(), correctedTarget.getY(), drivetrain.getHeading()),
+    //         new TrajectoryConfig(Units.feetToMeters(3.0), Units.feetToMeters(3.0))));
+;
 
-    latestTurretAngle = calculatedHeading;
+    latestWindage = calculatedHeading;
     latestShootSpeed = calculateRequiredShooterSpeed(correctedDistance);
 
     // TODO: add this back if/when we have a real hood, for now, just set it to the
     // current angle
     // latestHoodAngle = calculateRequiredHoodAngle(correctedDistance);
-    latestHoodAngle = Degrees.of(0);
-    
+    HoodAngle = Degrees.of(28);
 
-    Shooter.setVelocity(latestShootSpeed);
-     var originalSpeed     = this.inputStream.get();
-    drivetrain.drive(new Translation2d(originalSpeed.vxMetersPerSecond, originalSpeed.vyMetersPerSecond), 0, false);
-    // SmartDashboard.putNumber("shoot speed", latestShootSpeed);
-    // SmartDashboard.putNumber("target angle", latestTurretAngle);
+    // Use the computed required shooter speed instead of a hard-coded value
+    shooter.setset();
+    System.out.println(shooter.getVelocity());
+    var output = pidController.calculate(drivetrain.getHeading().getRadians(),
+                                         new State(calculatedHeading.magnitude(), 0));
+    var feedforwardOutput = feedforward.calculate(pidController.getSetpoint().velocity);
+    var originalSpeed     = this.inputStream.get();
+    originalSpeed.omegaRadiansPerSecond =  (output + feedforwardOutput);
+    drivetrain.driveFieldOriented(originalSpeed);
+    // drivetrain.driveFieldOriented(
+    //   SwerveInputStream.of(drivetrain.getSwerveDrive(),
+    //                                                             () -> driverXbox.getLeftY() * -1,
+    //                                                             () -> driverXbox.getLeftX() * -1)
+    //                                                         .withControllerRotationAxis(driverXbox::getRightX)
+    //                                                         .deadband(OperatorConstants.DEADBAND)
+    //                                                         .scaleTranslation(0.8)
+    //                                                         .allianceRelativeControl(true)
+    //                                                         .withControllerHeadingAxis(() -> Math.cos(latestWindage.magnitude()),
+    //                                                                                    () -> Math.sin(latestWindage.magnitude()))
+    //                                                         .headingWhile(true)
+    //   );
+
+    SmartDashboard.putNumber("shoot speed", latestShootSpeed.magnitude());
+    SmartDashboard.putNumber("target angle", latestWindage.magnitude());
     // SmartDashboard.putBoolean("Encoder A Raw", rotorSeededFromAbs);
 
-    // System.out.println("Shooting at distance: " + correctedDistance + " requires
-    // speed: " + latestShootSpeed
-    // + ", hood angle: " + latestHoodAngle + ", turret angle: " +
-    // latestTurretAngle);
+    System.out.println("Shooting at distance: " + correctedDistance
+     + " requires speed: " + latestShootSpeed
+     + ", turret angle: " + drivetrain.getHeading()
+     + ", target angle:" + calculatedHeading
+     + Math.cos(latestWindage.magnitude())
+     + Math.sin(latestWindage.magnitude())
+     );
   }
 
   private double getFlightTime(Distance distanceToTarget) {
@@ -156,7 +244,12 @@ var targetOnGround = new Translation2d(target.getX(), target.getY());
           Map.entry(Inches.of(101).in(Meters), 6300.0),
           Map.entry(Inches.of(133).in(Meters), 7050.0),
           Map.entry(Inches.of(166).in(Meters), 7900.0),
-          Map.entry(Inches.of(209).in(Meters), 8600.0));
+          Map.entry(Inches.of(209).in(Meters), 8600.0), 
+          Map.entry(Inches.of(118.51).in(Meters), 7500.0),
+          Map.entry(Inches.of(111.51).in(Meters), 7000.0), 
+          Map.entry(Inches.of(97.51).in(Meters), 6800.0), 
+          Map.entry(Inches.of(87.51).in(Meters), 6600.0), 
+          Map.entry(Inches.of(77.51).in(Meters), 6100.0));
 
   // meters, degrees
   private static final InterpolatingDoubleTreeMap HOOD_ANGLE_BY_DISTANCE =
