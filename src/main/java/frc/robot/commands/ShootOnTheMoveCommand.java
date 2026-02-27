@@ -28,6 +28,8 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.subsystems.swervedrive.SwerveSubsystem;
 import frc.robot.Constants.OperatorConstants;
+import frc.robot.Constants.ShooterConstants;
+import frc.robot.field.AllianceFlipUtil;
 import frc.robot.subsystems.ShooterSubsystem;
 import edu.wpi.first.math.trajectory.TrapezoidProfile.State;
 import java.io.InputStream;
@@ -35,6 +37,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.function.Supplier;
+
+import com.fasterxml.jackson.databind.util.RootNameLookup;
+
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import swervelib.SwerveInputStream;
 import edu.wpi.first.math.trajectory.Trajectory;
@@ -47,7 +52,7 @@ import edu.wpi.first.math.trajectory.TrapezoidProfile.Constraints;
 
 public class ShootOnTheMoveCommand extends Command {
   private final SwerveSubsystem drivetrain;
-  private final ShooterSubsystem shooter;
+  final ShooterSubsystem shooter;
   private final SwerveInputStream inputStream;
   private Translation3d aimPoint; // The point to aim at
   private AngularVelocity latestShootSpeed;
@@ -56,11 +61,12 @@ public class ShootOnTheMoveCommand extends Command {
   private final Angle                      setpointTolerance   = Degrees.of(0);
   private final AngularVelocity            maxProfiledVelocity = RotationsPerSecond.of(60);
   private final AngularAcceleration    maxProfiledAcceleration = RotationsPerSecondPerSecond.of(60);
-  private static AngularVelocity targetShootSpeed = RPM.of(1000);
+  private static AngularVelocity targetShootSpeed = RPM.of(0);
+  private static boolean withinTolerance = false;
 
-  private final ProfiledPIDController  pidController           = new ProfiledPIDController(1.5,
-                                                                                           0,
-                                                                                           0,
+  private final ProfiledPIDController  pidController           = new ProfiledPIDController(1,
+                                                                                          0,
+                                                                                          0.01,
                                                                                            new Constraints(
                                                                                            maxProfiledVelocity.in(RadiansPerSecond),
                                                                                            maxProfiledAcceleration.in(RadiansPerSecondPerSecond)));
@@ -122,7 +128,7 @@ public class ShootOnTheMoveCommand extends Command {
   @Override
   public void execute() {
     // Calculate trajectory to aimPoint
-    var target = aimPoint;
+    var target = AllianceFlipUtil.apply(aimPoint);
 
     var shooterLocation =
         new Translation3d(drivetrain.getPose().getX(), drivetrain.getPose().getY(), 0)
@@ -186,13 +192,18 @@ public class ShootOnTheMoveCommand extends Command {
     shooter.setVelocity(targetShootSpeed);
 
     // Set the robot's heading to the turret angle 
-    System.out.println(shooter.getVelocity() + " is the current shooter speed");
     var output = pidController.calculate(drivetrain.getHeading().getRadians(),
                                          new State(calculatedHeading.magnitude(), 0));
     var feedforwardOutput = feedforward.calculate(pidController.getSetpoint().velocity);
     var originalSpeed     = this.inputStream.get();
     originalSpeed.omegaRadiansPerSecond =  (output + feedforwardOutput);
+    originalSpeed.vxMetersPerSecond = (originalSpeed.vxMetersPerSecond/3);
+    originalSpeed.vyMetersPerSecond = (originalSpeed.vyMetersPerSecond/3);
     drivetrain.driveFieldOriented(originalSpeed);
+    double rawAngleDiff = drivetrain.getHeading().getRadians() - calculatedHeading.in(Radian);
+    double angleDiff = Math.atan2(Math.sin(rawAngleDiff), Math.cos(rawAngleDiff)); // normalize to [-pi, pi]
+    withinTolerance = shooter.getVelocity().isNear(targetShootSpeed, ShooterConstants.flywheelTolerance)
+        && Math.abs(angleDiff) <= ShooterConstants.headingTolerance.in(Radian);
     // drivetrain.driveFieldOriented(
     //   SwerveInputStream.of(drivetrain.getSwerveDrive(),
     //                                                             () -> driverXbox.getLeftY() * -1,
@@ -208,22 +219,35 @@ public class ShootOnTheMoveCommand extends Command {
 
     SmartDashboard.putNumber("shoot speed", latestShootSpeed.magnitude());
     SmartDashboard.putNumber("target angle", latestWindage.magnitude());
+    SmartDashboard.putBoolean(getName(), withinTolerance);
+    SmartDashboard.putNumber(getName(), angleDiff);
+    SmartDashboard.putNumber("VelocityDiff", shooter.getVelocity().minus(targetShootSpeed).magnitude());
     // SmartDashboard.putBoolean("Encoder A Raw", rotorSeededFromAbs);
+
+
 
     System.out.println("Shooting at distance: " + correctedDistance
      + " requires speed: " + latestShootSpeed
+     + ", is speed: " + shooter.getVelocity()
      + ", turret angle: " + drivetrain.getHeading()
      + ", target angle:" + calculatedHeading
+     + ", within tolerance: " + withinTolerance
+     + " Target X: " + correctedTarget.getX()
+     + " Target Y: " + correctedTarget.getY()
     //  + Math.cos(latestWindage.magnitude())
     //  + Math.sin(latestWindage.magnitude())
      );
   }
 
-  public AngularVelocity getTargetShootSpeed() {
+  public static AngularVelocity getTargetShootSpeed() {
     // This is a placeholder implementation. In a real implementation, you would
     // want to store the latest calculated shooter speed in a way that this method
     // can access it.
     return targetShootSpeed;
+  }
+
+  public static boolean isWithinTolerance() {
+    return withinTolerance;
   }
 
   private double getFlightTime(Distance distanceToTarget) {

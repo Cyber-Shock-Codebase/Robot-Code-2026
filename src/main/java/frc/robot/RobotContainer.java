@@ -22,17 +22,23 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
+import frc.robot.Constants.DrivebaseConstants;
 import frc.robot.Constants.OperatorConstants;
+import frc.robot.Constants.ShooterConstants;
 import frc.robot.subsystems.ShooterSubsystem;
 import frc.robot.subsystems.swervedrive.SwerveSubsystem;
 import java.io.File;
 import java.io.InputStream;
 import static edu.wpi.first.units.Units.RPM;
 import static edu.wpi.first.units.Units.RotationsPerSecond;
+import frc.robot.field.AllianceFlipUtil;
+import frc.robot.field.FieldConstants.Hub;
 
 
 import swervelib.SwerveInputStream;
+import swervelib.simulation.ironmaple.simulation.SimulatedArena.FieldMap;
 import frc.robot.commands.ShootOnTheMoveCommand;
+import frc.robot.subsystems.IntakeSubsystem;
 
 /**
  * This class is where the bulk of the robot should be declared. Since Command-based is a "declarative" paradigm, very
@@ -48,6 +54,7 @@ public class RobotContainer
   private final SwerveSubsystem       drivebase  = new SwerveSubsystem(new File(Filesystem.getDeployDirectory(),
                                                                                 "swerve/maxSwerve"));
   private final ShooterSubsystem      Shooter    = new ShooterSubsystem();
+  private final IntakeSubsystem       Intake     = new IntakeSubsystem();
 
   // Establish a Sendable Chooser that will be able to be sent to the SmartDashboard, allowing selection of desired auto
   private final SendableChooser<Command> autoChooser;
@@ -66,8 +73,10 @@ public class RobotContainer
   /**
    * Clone's the angular velocity input stream and converts it to a fieldRelative input stream.
    */
-  SwerveInputStream driveDirectAngle = driveAngularVelocity.copy().withControllerHeadingAxis(driverXbox::getRightX,
-                                                                                             driverXbox::getRightY)
+  
+  SwerveInputStream driveDirectAngle = driveAngularVelocity.copy().withControllerHeadingAxis(
+                                                                () -> AllianceFlipUtil.applyDouble(-driverXbox.getRightX()),
+                                                                () -> AllianceFlipUtil.applyDouble(-driverXbox.getRightY()))
                                                            .headingWhile(true);
 
   /**
@@ -178,12 +187,26 @@ public class RobotContainer
       driverXbox.button(1).whileTrue(drivebase.sysIdDriveMotorCommand());
       driverXbox.button(2).whileTrue(Commands.runEnd(() -> driveDirectAngleKeyboard.driveToPoseEnabled(true),
                                                      () -> driveDirectAngleKeyboard.driveToPoseEnabled(false)));
-      driverXbox.rightBumper().whileTrue(new ShootOnTheMoveCommand(drivebase, driveDirectAngle, Shooter, new Translation3d(4.611624,4.021328,1.8288)));
-
-//      driverXbox.b().whileTrue(
-//          drivebase.driveToPose(
-//              new Pose2d(new Translation2d(4, 4), Rotation2d.fromDegrees(0)))
-//                              );
+      driverXbox.rightBumper().whileTrue(new ShootOnTheMoveCommand(
+                                                                    drivebase, 
+                                                                    driveDirectAngle, 
+                                                                    Shooter, 
+                                                                    Hub.innerCenterPoint));
+      driverXbox.rightBumper().whileTrue(Shooter.setVelocity(() -> ShootOnTheMoveCommand.getTargetShootSpeed()));
+      driverXbox.rightBumper().whileTrue(Intake.setVelocity(RPM.of(Constants.intakeConstants.IN_SPEED_Fast)));
+      driverXbox.rightBumper().whileTrue(Commands.run(() -> {if (ShootOnTheMoveCommand.isWithinTolerance()) {Shooter.feed();}else {Shooter.stopFeeding();}}));
+      driverXbox.rightBumper().whileFalse(Commands.run(() -> Shooter.stopFeeding()));
+      driverXbox.rightBumper().whileFalse(Shooter.standby());
+      driverXbox.leftTrigger().whileTrue(Intake.setVelocity(RPM.of(Constants.intakeConstants.OUT_SPEED_NORM)));
+      driverXbox.rightTrigger().whileTrue(Intake.setVelocity(RPM.of(Constants.intakeConstants.IN_SPEED_NORM)));
+      driverXbox.a().whileTrue(
+         drivebase.driveToPose(
+             new Pose2d(new Translation2d(2, 3.750), Rotation2d.fromDegrees(180))
+         ).andThen(
+         drivebase.driveToPose(
+             new Pose2d(new Translation2d(1.059, 3.750), Rotation2d.fromDegrees(180)))
+         )
+         );
 
     }
     if (DriverStation.isTest())
@@ -199,10 +222,32 @@ public class RobotContainer
     {
       driverXbox.a().onTrue((Commands.runOnce(drivebase::zeroGyro)));
       driverXbox.x().onTrue(Commands.runOnce(drivebase::addFakeVisionReading));
-      driverXbox.start().whileTrue(Commands.none());
-      driverXbox.back().whileTrue(Commands.none());
-      driverXbox.leftBumper().whileTrue(Commands.runOnce(drivebase::lock, drivebase).repeatedly());
-      driverXbox.rightBumper().onTrue(Commands.none());
+      driverXbox.rightBumper().whileTrue(new ShootOnTheMoveCommand(
+                                                                    drivebase, 
+                                                                    driveDirectAngle, 
+                                                                    Shooter, 
+                                                                    Hub.innerCenterPoint)
+                                                                    );
+      driverXbox.rightBumper().whileTrue(Shooter.setVelocity(() -> ShootOnTheMoveCommand.getTargetShootSpeed()));
+      driverXbox.rightBumper().whileTrue(Intake.setVelocity(RPM.of(Constants.intakeConstants.IN_SPEED_Fast)));
+      driverXbox.rightBumper().whileTrue(Commands.run(() -> {if (ShootOnTheMoveCommand.isWithinTolerance()) {Shooter.feed();}else {Shooter.stopFeeding();}}));
+      driverXbox.rightBumper().whileFalse(Commands.run(() -> Shooter.stopFeeding()));
+      driverXbox.rightBumper().whileFalse(Shooter.standby());
+      driverXbox.rightBumper().whileFalse(Intake.setVelocity(RPM.of(0)));
+      driverXbox.leftTrigger().whileTrue(Intake.setVelocity(RPM.of(Constants.intakeConstants.OUT_SPEED_NORM)));
+      driverXbox.leftTrigger().whileFalse(Intake.setVelocity(RPM.of(0)));
+      driverXbox.rightTrigger().whileTrue(Intake.setVelocity(RPM.of(Constants.intakeConstants.IN_SPEED_NORM)));
+      driverXbox.rightTrigger().whileFalse(Intake.setVelocity(RPM.of(0)));
+      driverXbox.a().whileTrue(
+         drivebase.driveToPose(
+             new Pose2d(new Translation2d(2, 3.750), Rotation2d.fromDegrees(180))
+         ).andThen(
+         drivebase.driveToPose(
+             new Pose2d(new Translation2d(1.059, 3.750), Rotation2d.fromDegrees(180)))
+         )
+         );
+      // driverXbox.b().whileTrue(climb);
+      // driverXbox.x().whileTrue()
     }
 
   }

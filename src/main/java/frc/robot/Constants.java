@@ -4,9 +4,14 @@
 
 package frc.robot;
 
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.util.Units;
+import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.AngularVelocity;
 import swervelib.math.Matter;
+import static edu.wpi.first.units.Units.Degrees;
+import static edu.wpi.first.units.Units.RPM;
 
 /**
  * The Constants class provides a convenient place for teams to hold robot-wide numerical or boolean constants. This
@@ -48,4 +53,35 @@ public final class Constants
     public static final double RIGHT_X_DEADBAND = 0.1;
     public static final double TURN_CONSTANT    = 6;
   }
+
+  public static class intakeConstants
+  {
+
+    public static final double IN_SPEED_NORM = 2500;
+    public static final double IN_SPEED_Fast = 5000;
+    public static final double OUT_SPEED_NORM = -2500;
+    public static final double OUT_SPEED_FAST = -5000;
+    public static final int MOTOR_ID = 9;
+  }
+
+  public static class ShooterConstants
+  {
+
+    public static final int FEEDER_MOTOR_ID = 2;
+    public static final double feederSpeedNorm = 0.5;
+    public static final double flywheelTolerance = 100; // RPM tolerance for feeder to activate
+    public static final Angle headingTolerance = Degrees.of(1); // degrees tolerance for feeder to activate
+    public static final int SHOOTER_MOTOR0_ID = 3;
+    // public static final int SHOOTER_MOTOR1_ID = 4;
+    public static final int SHOOTER_MOTOR2_ID = 5;
+    public static final int SHOOTER_MOTOR3_ID = 6;
+    public static final int SHOOTER_MOTOR4_ID = 7;
+    // public static final int SHOOTER_MOTOR5_ID = 8;
+    public static final AngularVelocity minSpeed = RPM.of(100); // RPM, minimum speed to shoot
+    public static final AngularVelocity maxSpeed = RPM.of(9000); // RPM, maximum speed to shoot
+  }
+
+
+    
 }
+
