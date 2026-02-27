@@ -10,6 +10,8 @@ import edu.wpi.first.math.util.Units;
 import edu.wpi.first.units.measure.Angle;
 import edu.wpi.first.units.measure.AngularVelocity;
 import swervelib.math.Matter;
+import swervelib.parser.json.modules.AngleConversionFactorsJson;
+
 import static edu.wpi.first.units.Units.Degrees;
 import static edu.wpi.first.units.Units.RPM;
 
@@ -79,6 +81,17 @@ public final class Constants
     // public static final int SHOOTER_MOTOR5_ID = 8;
     public static final AngularVelocity minSpeed = RPM.of(100); // RPM, minimum speed to shoot
     public static final AngularVelocity maxSpeed = RPM.of(9000); // RPM, maximum speed to shoot
+  }
+
+  public static class ArmConstants
+  {
+    public static final int MOTOR_ID = 51;
+    public static final Angle softmaxAngle = Degrees.of(120);
+    public static final Angle softminAngle = Degrees.of(10);
+    public static final Angle maxAngle     = Degrees.of(130);
+    public static final Angle minAngle     = Degrees.of(0);
+    public static final Angle climbAngle   = Degrees.of(100);
+    public static final Angle raiseAngle   = Degrees.of(90);
   }
 
 

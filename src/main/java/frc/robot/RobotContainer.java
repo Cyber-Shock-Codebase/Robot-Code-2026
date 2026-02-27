@@ -22,6 +22,7 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
+import frc.robot.Constants.ArmConstants;
 import frc.robot.Constants.DrivebaseConstants;
 import frc.robot.Constants.OperatorConstants;
 import frc.robot.Constants.ShooterConstants;
@@ -39,6 +40,7 @@ import swervelib.SwerveInputStream;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena.FieldMap;
 import frc.robot.commands.ShootOnTheMoveCommand;
 import frc.robot.subsystems.IntakeSubsystem;
+import frc.robot.subsystems.ExponentiallyProfiledArmSubsystem;
 
 /**
  * This class is where the bulk of the robot should be declared. Since Command-based is a "declarative" paradigm, very
@@ -55,6 +57,7 @@ public class RobotContainer
                                                                                 "swerve/maxSwerve"));
   private final ShooterSubsystem      Shooter    = new ShooterSubsystem();
   private final IntakeSubsystem       Intake     = new IntakeSubsystem();
+  private final ExponentiallyProfiledArmSubsystem ARM = new ExponentiallyProfiledArmSubsystem();
 
   // Establish a Sendable Chooser that will be able to be sent to the SmartDashboard, allowing selection of desired auto
   private final SendableChooser<Command> autoChooser;
@@ -205,9 +208,11 @@ public class RobotContainer
          ).andThen(
          drivebase.driveToPose(
              new Pose2d(new Translation2d(1.059, 3.750), Rotation2d.fromDegrees(180)))
-         )
-         );
-
+         ));
+      driverXbox.povRight().onTrue(ARM.setAngle(ArmConstants.softminAngle));
+      driverXbox.povUp().onTrue(ARM.setAngle(ArmConstants.raiseAngle));
+      driverXbox.povLeft().onTrue(ARM.setAngle(ArmConstants.softmaxAngle));
+      driverXbox.povDown().onTrue(ARM.setAngle(ArmConstants.climbAngle));
     }
     if (DriverStation.isTest())
     {
